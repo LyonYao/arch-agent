@@ -80,8 +80,13 @@ class QianwenAPI:
 4. 设计决策：3-5条关键设计决策(每条20-40字)
 5. 最佳实践：3-5条应用的AWS最佳实践(每条15-30字)
 
+对于架构组件，必须使用以下AWS服务类型之一作为service_type字段的值：
+EC2, Lambda, ECS, Fargate, EKS, ElasticBeanstalk, RDS, DynamoDB, ElastiCache, Aurora, Redshift, 
+VPC, ELB, ALB, NLB, CloudFront, Route53, APIGateway, S3, EFS, EBS, IAM, Cognito, WAF, Shield, 
+SQS, SNS, EventBridge, CloudWatch, CloudTrail, CloudFormation
+
 对于架构图描述，使用以下JSON格式:
-- nodes: 节点数组，每个节点包含id、type和name
+- nodes: 节点数组，每个节点包含id、type和name，其中type必须是上述AWS服务类型之一
 - connections: 连接数组，每个连接包含from、to和label
 
 请直接返回JSON格式结果，包含以下字段:
@@ -93,16 +98,30 @@ class QianwenAPI:
 
 示例格式:
 {{
+  "components": [
+    {{
+      "name": "Web服务器",
+      "service_type": "EC2",
+      "description": "运行Web应用的EC2实例"
+    }},
+    {{
+      "name": "用户认证",
+      "service_type": "Cognito",
+      "description": "管理用户身份验证和授权"
+    }}
+  ],
   "diagram_description": {{
     "nodes": [
       {{"id": "web", "type": "EC2", "name": "Web服务器"}},
-      {{"id": "db", "type": "RDS", "name": "数据库"}}
+      {{"id": "auth", "type": "Cognito", "name": "用户认证"}}
     ],
     "connections": [
-      {{"from": "web", "to": "db", "label": "读写数据"}}
+      {{"from": "web", "to": "auth", "label": "认证请求"}}
     ]
   }}
 }}
+
+注意：确保所有service_type和type字段都使用上述列出的AWS服务类型，不要使用"Service"或其他通用类型。
 """.format(requirements)
         
         return prompt
@@ -128,8 +147,13 @@ class QianwenAPI:
 4. 设计决策：3-5条关键设计决策，特别是与原架构的差异
 5. 最佳实践：3-5条应用的AWS最佳实践
 
+对于架构组件，必须使用以下AWS服务类型之一作为service_type字段的值：
+EC2, Lambda, ECS, Fargate, EKS, ElasticBeanstalk, RDS, DynamoDB, ElastiCache, Aurora, Redshift, 
+VPC, ELB, ALB, NLB, CloudFront, Route53, APIGateway, S3, EFS, EBS, IAM, Cognito, WAF, Shield, 
+SQS, SNS, EventBridge, CloudWatch, CloudTrail, CloudFormation
+
 对于架构图描述，使用以下JSON格式:
-- nodes: 节点数组，每个节点包含id、type和name
+- nodes: 节点数组，每个节点包含id、type和name，其中type必须是上述AWS服务类型之一
 - connections: 连接数组，每个连接包含from、to和label
 
 请直接返回JSON格式结果，包含以下字段:
@@ -138,6 +162,33 @@ class QianwenAPI:
 - diagram_description: 架构图描述，包含nodes和connections
 - design_decisions: 设计决策列表
 - best_practices: 最佳实践列表
+
+示例格式:
+{{
+  "components": [
+    {{
+      "name": "Web服务器",
+      "service_type": "EC2",
+      "description": "运行Web应用的EC2实例"
+    }},
+    {{
+      "name": "用户认证",
+      "service_type": "Cognito",
+      "description": "管理用户身份验证和授权"
+    }}
+  ],
+  "diagram_description": {{
+    "nodes": [
+      {{"id": "web", "type": "EC2", "name": "Web服务器"}},
+      {{"id": "auth", "type": "Cognito", "name": "用户认证"}}
+    ],
+    "connections": [
+      {{"from": "web", "to": "auth", "label": "认证请求"}}
+    ]
+  }}
+}}
+
+注意：确保所有service_type和type字段都使用上述列出的AWS服务类型，不要使用"Service"或其他通用类型。
 """.format(requirements)
         
         return prompt
