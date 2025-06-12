@@ -6,17 +6,18 @@
 生成架构设计方案
 """
 
-import logging
+import os
 import json
 import re
 from typing import Dict, Any, List
 from src.api.qianwen_api import QianwenAPI
 from src.core.requirement_analyzer import RequirementAnalyzer
 from src.core.aws_best_practices import AWSBestPractices
+from src.core.architecture_validator import ArchitectureValidator
+from src.utils.logger import get_logger
 
-# 配置日志
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
+# 获取日志记录器
+logger = get_logger(__name__)
 
 class ArchitectureGenerator:
     """架构生成器"""
@@ -26,13 +27,17 @@ class ArchitectureGenerator:
         self.api_client = QianwenAPI()
         self.requirement_analyzer = RequirementAnalyzer()
         self.best_practices = AWSBestPractices()
+        self.architecture_validator = ArchitectureValidator(api_client=self.api_client)
+        logger.info ("架构生成器初始化完成，准备生成架构设计")
+        logger.info(f"使用的千问API模型: {self.api_client.model}")
     
-    def generate(self, requirements: str) -> Dict[str, Any]:
+    def generate(self, requirements: str, stream_callback=None) -> Dict[str, Any]:
         """
         生成架构设计
         
         Args:
             requirements: 用户输入的需求
+            stream_callback: 流式响应回调函数，用于实时显示生成结果
             
         Returns:
             Dict: 架构设计结果
@@ -42,9 +47,13 @@ class ArchitectureGenerator:
         analysis_result = self.requirement_analyzer.analyze(requirements)
         logger.info(f"需求分析结果: 系统类型={analysis_result.get('system_type')}, 复杂度={analysis_result.get('complexity')}")
         
+        # 如果提供了回调函数，通知用户开始生成
+        if stream_callback:
+            stream_callback("开始生成架构设计...\n")
+        
         # 调用API生成架构
         logger.info("调用千问API生成架构设计")
-        architecture = self.api_client.generate_architecture(requirements)
+        architecture = self.api_client.generate_architecture(requirements, stream_callback)
         
         # 如果API调用失败，返回错误信息
         if "error" in architecture:
@@ -58,9 +67,56 @@ class ArchitectureGenerator:
         
         # 增强架构设计
         logger.info("增强架构设计")
+        if stream_callback:
+            stream_callback("\n\n正在优化架构设计...\n")
+        
         enhanced_architecture = self._enhance_architecture(architecture, analysis_result)
         
-        return enhanced_architecture
+        # 验证架构是否符合公司规则
+        logger.warning("===== 开始验证架构是否符合公司规则 =====")
+        if stream_callback:
+            stream_callback("\n\n正在验证架构是否符合公司规则...\n")
+        
+        # 打印当前规则文件列表
+        rules_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 
+                               "resources", "aws_patterns")
+        if os.path.exists(rules_dir):
+            rule_files = [f for f in os.listdir(rules_dir) if f.endswith('.md')]
+            logger.warning(f"找到 {len(rule_files)} 个规则文件: {', '.join(rule_files)}")
+            
+            # 强制进行一次验证，确保验证逻辑正常工作
+            is_valid, violations = self.architecture_validator.rule_validator.validate_architecture(
+                enhanced_architecture, requirements)
+            logger.warning(f"初步验证结果: 通过={is_valid}, 违规数={len(violations)}")
+            if violations:
+                for v in violations:
+                    logger.warning(f"违规: {v['rule']} - {v['reason']}")
+        else:
+            logger.error(f"规则目录不存在: {rules_dir}")
+        
+        validated_architecture, violations, iterations = self.architecture_validator.validate_and_improve(
+            enhanced_architecture, requirements, stream_callback)
+        
+        # 如果有违反规则，记录日志
+        if violations:
+            logger.warning(f"===== 架构验证完成，发现 {len(violations)} 个问题，经过 {iterations} 轮改进 =====")
+            for i, v in enumerate(violations):
+                logger.warning(f"剩余违反 {i+1}: {v['rule']} - {v['reason']}")
+                
+            if stream_callback:
+                stream_callback(f"\n\n架构验证完成，发现 {len(violations)} 个问题，经过 {iterations} 轮改进")
+                if violations:
+                    violation_text = "\n".join([f"- {v['rule']}: {v['reason']}" for v in violations])
+                    stream_callback(f"\n\n剩余问题:\n{violation_text}")
+        else:
+            logger.warning("===== 架构验证通过，符合所有公司规则！=====")
+            if stream_callback:
+                stream_callback("\n\n架构验证通过，符合所有公司规则！")
+        
+        if stream_callback:
+            stream_callback("\n架构设计生成完成！")
+        
+        return validated_architecture
     
     def _extract_json_from_content(self, content: str) -> Dict[str, Any]:
         """

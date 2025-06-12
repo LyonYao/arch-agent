@@ -233,14 +233,40 @@ class OutputPanel(QWidget):
                 logger.error(f"无法加载图片: {diagram_path}")
                 self.diagram_image_label.setText(f"无法加载图片: {diagram_path}")
             else:
-                self.diagram_image = pixmap
-                self.original_pixmap = pixmap  # 保存原始图像
-                self.current_scale = 1.0  # 当前缩放比例
+                # 保存原始图像
+                self.original_pixmap = pixmap
                 
-                # 显示图像
-                self.diagram_image_label.setPixmap(pixmap)
+                # 默认显示原始大小，以保持文字清晰度
+                self.diagram_image = pixmap
+                self.current_scale = 1.0
+                
+                # 获取显示区域大小
+                screen_size = self.diagram_tab.size()
+                
+                # 如果图像太大，适当缩小
+                if pixmap.width() > screen_size.width() * 0.9 or pixmap.height() > screen_size.height() * 0.9:
+                    # 计算合适的缩放比例，但不要缩放太多以保持文字清晰
+                    width_ratio = screen_size.width() * 0.9 / pixmap.width()
+                    height_ratio = screen_size.height() * 0.9 / pixmap.height()
+                    scale_ratio = max(min(width_ratio, height_ratio), 0.7)  # 不小于70%
+                    
+                    # 使用高质量缩放
+                    scaled_pixmap = pixmap.scaled(
+                        int(pixmap.width() * scale_ratio),
+                        int(pixmap.height() * scale_ratio),
+                        Qt.AspectRatioMode.KeepAspectRatio,
+                        Qt.TransformationMode.SmoothTransformation
+                    )
+                    self.diagram_image = scaled_pixmap
+                    self.current_scale = scale_ratio
+                    self.diagram_image_label.setPixmap(scaled_pixmap)
+                else:
+                    # 否则使用原始大小
+                    self.diagram_image_label.setPixmap(pixmap)
+                
                 self.diagram_image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-                logger.info(f"架构图显示成功: {diagram_path}")
+                logger.info(f"架构图显示成功: {diagram_path}, 缩放比例: {self.current_scale:.2f}")
+                
                 # 切换到架构图选项卡
                 self.tab_widget.setCurrentIndex(2)  # 架构图是第三个选项卡（索引为2）
         else:
@@ -268,14 +294,16 @@ class OutputPanel(QWidget):
     def _update_scaled_image(self):
         """更新缩放后的图像"""
         if hasattr(self, 'original_pixmap') and self.original_pixmap is not None:
+            # 使用高质量缩放
             scaled_pixmap = self.original_pixmap.scaled(
                 int(self.original_pixmap.width() * self.current_scale),
                 int(self.original_pixmap.height() * self.current_scale),
                 Qt.AspectRatioMode.KeepAspectRatio,
-                Qt.TransformationMode.SmoothTransformation
+                Qt.TransformationMode.SmoothTransformation  # 使用平滑变换提高质量
             )
             self.diagram_image = scaled_pixmap
             self.diagram_image_label.setPixmap(scaled_pixmap)
+            logger.info(f"图像已缩放，当前比例: {self.current_scale:.2f}")
     
     def has_architecture(self) -> bool:
         """
@@ -355,6 +383,9 @@ class OutputPanel(QWidget):
         if not self.diagram_image:
             raise ValueError("没有可导出的架构图")
         
-        # 保存图片
-        self.diagram_image.save(file_path)
+        # 保存图片，使用原始图像以保持高分辨率
+        if self.original_pixmap:
+            self.original_pixmap.save(file_path, quality=100)  # 使用最高质量设置
+        else:
+            self.diagram_image.save(file_path, quality=100)
         logger.info(f"架构图已导出到: {file_path}")

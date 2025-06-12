@@ -10,15 +10,17 @@ import os
 import sys
 from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
                            QSplitter, QMessageBox, QStatusBar, QToolBar, 
-                           QFileDialog, QTabWidget)
+                           QFileDialog, QTabWidget, QPushButton, QLabel)
 from PyQt6.QtCore import Qt, QSize
 from PyQt6.QtGui import QAction, QIcon
 
 from src.ui.chat_panel import ChatPanel
 from src.ui.output_panel import OutputPanel
 from src.ui.session_panel import SessionPanel
+from src.ui.log_console import LogConsole
 from src.api.qianwen_api import QianwenAPI
 from src.core.session_manager import SessionManager
+from src.core.architecture_generator import ArchitectureGenerator
 
 class MainWindow(QMainWindow):
     """应用程序主窗口"""
@@ -37,6 +39,8 @@ class MainWindow(QMainWindow):
         # 初始化API客户端
         try:
             self.api_client = QianwenAPI()
+            # 初始化架构生成器
+            self.architecture_generator = ArchitectureGenerator()
         except ValueError as e:
             QMessageBox.critical(self, "API配置错误", str(e))
             sys.exit(1)
@@ -46,6 +50,9 @@ class MainWindow(QMainWindow):
         self._create_toolbar()
         self._create_statusbar()
         self._create_connections()
+        
+        # 清理没有交互的会话
+        self._cleanup_empty_sessions()
         
         # 如果没有活动会话，创建一个新会话
         if not self.session_manager.get_active_session():
@@ -59,18 +66,23 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(central_widget)
         
         # 创建主布局
-        main_layout = QHBoxLayout(central_widget)
+        main_layout = QVBoxLayout(central_widget)
         main_layout.setContentsMargins(10, 10, 10, 10)
+        
+        # 创建上部主面板
+        upper_panel = QWidget()
+        upper_layout = QHBoxLayout(upper_panel)
+        upper_layout.setContentsMargins(0, 0, 0, 0)
         
         # 创建左侧会话面板
         self.session_panel = SessionPanel(self.session_manager)
         self.session_panel.setMaximumWidth(250)
-        main_layout.addWidget(self.session_panel)
+        upper_layout.addWidget(self.session_panel)
         
-        # 创建右侧主面板
-        right_panel = QWidget()
-        right_layout = QVBoxLayout(right_panel)
-        right_layout.setContentsMargins(0, 0, 0, 0)
+        # 创建右侧工作区
+        work_area = QWidget()
+        work_layout = QVBoxLayout(work_area)
+        work_layout.setContentsMargins(0, 0, 0, 0)
         
         # 创建分割器
         splitter = QSplitter(Qt.Orientation.Horizontal)
@@ -84,13 +96,46 @@ class MainWindow(QMainWindow):
         splitter.addWidget(self.output_panel)
         
         # 设置分割器比例
-        splitter.setSizes([400, 800])
+        splitter.setSizes([300, 900])
         
-        # 将分割器添加到右侧布局
-        right_layout.addWidget(splitter)
+        # 将分割器添加到工作区布局
+        work_layout.addWidget(splitter)
         
-        # 将右侧面板添加到主布局
-        main_layout.addWidget(right_panel, 1)  # 1表示伸展因子，使右侧面板占据更多空间
+        # 将工作区添加到上部布局
+        upper_layout.addWidget(work_area, 1)  # 1表示伸展因子，使工作区占据更多空间
+        
+        # 将上部面板添加到主布局
+        main_layout.addWidget(upper_panel, 4)  # 上部占4份
+        
+        # 创建日志控制台面板
+        self.log_console = LogConsole()
+        
+        # 创建日志控制台容器和布局
+        log_container = QWidget()
+        log_layout = QHBoxLayout(log_container)
+        log_layout.setContentsMargins(0, 0, 0, 0)
+        
+        # 添加日志控制台标签
+        log_label = QLabel("日志控制台:")
+        log_layout.addWidget(log_label)
+        
+        # 添加清空日志按钮
+        clear_log_button = QPushButton("清空日志")
+        clear_log_button.clicked.connect(self.log_console.clear)
+        log_layout.addWidget(clear_log_button)
+        
+        # 添加伸展空间
+        log_layout.addStretch(1)
+        
+        # 创建日志控制台区域
+        log_area = QWidget()
+        log_area_layout = QVBoxLayout(log_area)
+        log_area_layout.setContentsMargins(0, 0, 0, 0)
+        log_area_layout.addWidget(log_container)
+        log_area_layout.addWidget(self.log_console)
+        
+        # 将日志区域添加到主布局
+        main_layout.addWidget(log_area, 1)  # 日志区域占1份
     
     def _create_toolbar(self):
         """创建工具栏"""
@@ -117,6 +162,12 @@ class MainWindow(QMainWindow):
         new_session_action.setStatusTip("创建新的架构设计会话")
         new_session_action.triggered.connect(self._create_new_session)
         toolbar.addAction(new_session_action)
+        
+        # 清理所有会话按钮
+        clear_all_sessions_action = QAction("清理所有会话", self)
+        clear_all_sessions_action.setStatusTip("删除所有会话")
+        clear_all_sessions_action.triggered.connect(self._clear_all_sessions)
+        toolbar.addAction(clear_all_sessions_action)
     
     def _create_statusbar(self):
         """创建状态栏"""
@@ -170,9 +221,9 @@ class MainWindow(QMainWindow):
             result_ready = pyqtSignal(dict)
             error_occurred = pyqtSignal(str)
             
-            def __init__(self, api_client, requirements, is_adjustment=False, context="", current_architecture=None):
+            def __init__(self, architecture_generator, requirements, is_adjustment=False, context="", current_architecture=None):
                 super().__init__()
-                self.api_client = api_client
+                self.architecture_generator = architecture_generator
                 self.requirements = requirements
                 self.is_adjustment = is_adjustment
                 self.context = context
@@ -195,9 +246,11 @@ class MainWindow(QMainWindow):
 
 请保持原有架构的基本结构，根据新需求进行必要的调整。
 """
-                        response = self.api_client.generate_architecture(adjustment_prompt)
+                        # 使用架构生成器生成架构，它会自动验证规则
+                        response = self.architecture_generator.generate(adjustment_prompt)
                     else:
-                        response = self.api_client.generate_architecture(self.requirements)
+                        # 使用架构生成器生成架构，它会自动验证规则
+                        response = self.architecture_generator.generate(self.requirements)
                     
                     self.result_ready.emit(response)
                 except Exception as e:
@@ -205,7 +258,7 @@ class MainWindow(QMainWindow):
         
         # 创建线程
         thread = ApiThread(
-            self.api_client, 
+            self.architecture_generator, 
             message,
             is_adjustment=not is_first_interaction,
             context=active_session.get_context_for_next_interaction() if not is_first_interaction else "",
@@ -238,7 +291,15 @@ class MainWindow(QMainWindow):
         # 更新思考中消息为成功消息
         overview = response.get("architecture_overview", "")
         summary = overview[:200] + "..." if len(overview) > 200 else overview
-        self.chat_panel.update_thinking_message(thinking_index, f"架构设计已生成:\n\n{summary}")
+        
+        # 检查是否有规则验证信息
+        validation_info = ""
+        if hasattr(self.architecture_generator, "architecture_validator"):
+            validator = self.architecture_generator.architecture_validator
+            if hasattr(validator, "rule_validator") and validator.rule_validator.rules:
+                validation_info = f"\n\n架构已通过AI验证，符合 {len(validator.rule_validator.rules)} 条架构规则"
+        
+        self.chat_panel.update_thinking_message(thinking_index, f"架构设计已生成:{validation_info}\n\n{summary}")
         
         # 显示结果
         self.output_panel.display_architecture(response)
@@ -261,8 +322,6 @@ class MainWindow(QMainWindow):
         
         # 启用输入面板
         self.chat_panel.set_enabled(True)
-    
-    # 这些方法已被_process_message中的线程处理替代，可以删除
     
     def _save_architecture(self):
         """保存架构设计到文件"""
@@ -300,6 +359,9 @@ class MainWindow(QMainWindow):
     
     def _create_new_session(self):
         """创建新会话"""
+        # 清理没有交互的会话
+        self._cleanup_empty_sessions()
+        
         # 创建新会话
         self.session_manager.create_session()
         
@@ -356,6 +418,66 @@ class MainWindow(QMainWindow):
             self.output_panel.diagram_image_label.setText("尚未生成架构图")
         
         self.statusBar.showMessage(f"已加载会话: {session.name}")
+    
+    def _cleanup_empty_sessions(self):
+        """清理没有交互的会话"""
+        sessions_to_delete = []
+        active_session_id = None
+        
+        # 保存当前活动会话ID
+        if self.session_manager.get_active_session():
+            active_session_id = self.session_manager.get_active_session().session_id
+        
+        # 查找没有交互的会话
+        for session_info in self.session_manager.get_all_sessions():
+            session_id = session_info["session_id"]
+            session = self.session_manager.get_session(session_id)
+            
+            # 如果会话没有交互记录，且不是当前活动会话，添加到待删除列表
+            if session and len(session.interactions) == 0 and session_id != active_session_id:
+                sessions_to_delete.append(session_id)
+        
+        # 删除空会话
+        for session_id in sessions_to_delete:
+            self.session_manager.delete_session(session_id)
+            
+        if sessions_to_delete:
+            print(f"已清理 {len(sessions_to_delete)} 个空会话")
+            
+    def _clear_all_sessions(self):
+        """清理所有会话"""
+        # 弹出确认对话框
+        reply = QMessageBox.question(
+            self, 
+            "确认删除", 
+            "确定要删除所有会话吗？此操作不可恢复。",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No
+        )
+        
+        if reply == QMessageBox.StandardButton.Yes:
+            # 删除所有会话
+            count = self.session_manager.delete_all_sessions()
+            
+            # 刷新会话列表
+            self.session_panel.refresh()
+            
+            # 清空输出面板
+            self.output_panel.overview_tab.clear()
+            self.output_panel.components_tab.clear()
+            self.output_panel.decisions_tab.clear()
+            self.output_panel.practices_tab.clear()
+            self.output_panel.json_tab.clear()
+            self.output_panel.diagram_image_label.setText("尚未生成架构图")
+            
+            # 清空聊天面板
+            self.chat_panel.clear()
+            
+            # 创建新会话
+            self.session_manager.create_session()
+            self.session_panel.refresh()
+            
+            self.statusBar.showMessage(f"已删除所有 {count} 个会话并创建新会话")
     
     def _on_session_created(self, session_id):
         """

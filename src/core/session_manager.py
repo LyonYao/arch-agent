@@ -264,6 +264,26 @@ class SessionManager:
             logger.info(f"删除会话: {session_id}")
             return True
         return False
+        
+    def delete_all_sessions(self) -> int:
+        """
+        删除所有会话
+        
+        Returns:
+            int: 删除的会话数量
+        """
+        session_ids = list(self.sessions.keys())
+        count = 0
+        
+        for session_id in session_ids:
+            if self.delete_session(session_id):
+                count += 1
+        
+        # 清空活动会话
+        self.active_session = None
+        
+        logger.info(f"删除了所有 {count} 个会话")
+        return count
     
     def get_all_sessions(self) -> List[Dict[str, Any]]:
         """

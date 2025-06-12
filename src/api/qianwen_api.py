@@ -8,18 +8,17 @@
 
 import os
 import json
-import logging
 import re
 import requests
 from typing import Dict, List, Any, Optional
 from dotenv import load_dotenv
+from src.utils.logger import get_logger
 
 # 加载环境变量
 load_dotenv()
 
-# 配置日志
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
+# 获取日志记录器
+logger = get_logger(__name__)
 
 class QianwenAPI:
     """千问API客户端类"""
@@ -29,16 +28,20 @@ class QianwenAPI:
         self.api_key = os.getenv("QIANWEN_API_KEY")
         self.api_url = os.getenv("QIANWEN_API_URL", 
                                "https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation")
+        self.model = os.getenv("QIANWEN_MODEL", "qwen-plus")  # 默认使用qwen-plus模型
         
         if not self.api_key:
             raise ValueError("未设置千问API密钥，请在.env文件中设置QIANWEN_API_KEY")
+            
+        logger.info(f"初始化千问API客户端，使用模型: {self.model}")
     
-    def generate_architecture(self, requirements: str) -> Dict[str, Any]:
+    def generate_architecture(self, requirements: str, stream_callback=None) -> Dict[str, Any]:
         """
         根据需求生成架构设计
         
         Args:
             requirements: 用户输入的系统需求描述
+            stream_callback: 流式响应回调函数，用于实时显示生成结果
             
         Returns:
             Dict: 包含架构设计的响应
@@ -53,7 +56,7 @@ class QianwenAPI:
             prompt = self._create_architecture_prompt(requirements)
             logger.info("调用千问API生成架构设计")
             
-        return self._call_api(prompt)
+        return self._call_api(prompt, stream_callback)
     
     def _create_architecture_prompt(self, requirements: str) -> str:
         """
@@ -65,47 +68,38 @@ class QianwenAPI:
         Returns:
             str: 格式化的提示词
         """
-        prompt = """作为一名资深的AWS解决方案架构师，请根据以下系统需求设计一个合理的AWS架构方案。
-请考虑AWS Well-Architected Framework的六大支柱（卓越运营、安全性、可靠性、性能效率、成本优化和可持续性）。
+        prompt = """作为AWS解决方案架构师，请根据以下需求设计简洁的AWS架构方案。考虑AWS Well-Architected Framework的关键原则。
 
 系统需求:
 {0}
 
-请提供以下内容:
-1. 架构概述：简要描述整体架构设计
-2. 架构组件：列出所有使用的AWS服务及其用途
-3. 架构图：使用文本描述架构图的组件和连接关系，以便后续生成可视化图表
-4. 设计决策：解释关键设计决策及其理由
-5. 最佳实践：应用了哪些AWS最佳实践
+请提供以下内容(简明扼要):
+1. 架构概述：简要描述整体架构设计(50-100字)
+2. 架构组件：列出核心AWS服务及用途(每项15-30字)
+3. 架构图：使用文本描述架构图的组件和连接关系
+4. 设计决策：3-5条关键设计决策(每条20-40字)
+5. 最佳实践：3-5条应用的AWS最佳实践(每条15-30字)
 
-对于架构图描述，请使用以下格式，以便Python Diagrams库可以正确生成图表:
-- nodes: 包含所有节点信息的数组，每个节点包含id、type和name
-  - id: 节点唯一标识符
-  - type: AWS服务类型，必须是以下之一: EC2, Lambda, ECS, Fargate, EKS, ElasticBeanstalk, RDS, Dynamodb, ElastiCache, Aurora, Redshift, VPC, ELB, ALB, NLB, CloudFront, Route53, APIGateway, S3, EFS, EBS, IAM, Cognito, WAF, Shield, SQS, SNS, Eventbridge, Cloudwatch, Cloudtrail, Cloudformation
-  - name: 节点显示名称
-- connections: 包含所有连接信息的数组，每个连接包含from、to和label
-  - from: 源节点的id
-  - to: 目标节点的id
-  - label: 连接的标签（可选）
+对于架构图描述，使用以下JSON格式:
+- nodes: 节点数组，每个节点包含id、type和name
+- connections: 连接数组，每个连接包含from、to和label
 
-请直接返回JSON格式结果，不要使用Markdown代码块，包含以下字段:
+请直接返回JSON格式结果，包含以下字段:
 - architecture_overview: 架构概述
 - components: 架构组件列表，每个组件包含name、service_type、description字段
 - diagram_description: 架构图描述，包含nodes和connections
 - design_decisions: 设计决策列表
-- best_practices: 应用的最佳实践列表
+- best_practices: 最佳实践列表
 
-示例架构图描述格式:
+示例格式:
 {{
   "diagram_description": {{
     "nodes": [
       {{"id": "web", "type": "EC2", "name": "Web服务器"}},
-      {{"id": "db", "type": "RDS", "name": "数据库"}},
-      {{"id": "s3", "type": "S3", "name": "静态资源"}}
+      {{"id": "db", "type": "RDS", "name": "数据库"}}
     ],
     "connections": [
-      {{"from": "web", "to": "db", "label": "读写数据"}},
-      {{"from": "web", "to": "s3", "label": "存取文件"}}
+      {{"from": "web", "to": "db", "label": "读写数据"}}
     ]
   }}
 }}
@@ -123,44 +117,38 @@ class QianwenAPI:
         Returns:
             str: 格式化的提示词
         """
-        prompt = """作为一名资深的AWS解决方案架构师，请根据以下信息调整现有的AWS架构方案。
-请考虑AWS Well-Architected Framework的六大支柱（卓越运营、安全性、可靠性、性能效率、成本优化和可持续性）。
+        prompt = """作为AWS解决方案架构师，请根据以下信息简洁调整现有AWS架构方案。
 
 {0}
 
-请提供调整后的架构设计，包含以下内容:
-1. 架构概述：简要描述调整后的整体架构设计
-2. 架构组件：列出所有使用的AWS服务及其用途，包括新增、修改或删除的组件
-3. 架构图：使用文本描述架构图的组件和连接关系，以便后续生成可视化图表
-4. 设计决策：解释关键设计决策及其理由，特别是与原架构的差异
-5. 最佳实践：应用了哪些AWS最佳实践
+请提供调整后的架构设计，包含以下内容(简明扼要):
+1. 架构概述：简要描述调整后的架构设计(50-100字)
+2. 架构组件：列出核心AWS服务，重点说明新增、修改或删除的组件
+3. 架构图：使用文本描述架构图的组件和连接关系
+4. 设计决策：3-5条关键设计决策，特别是与原架构的差异
+5. 最佳实践：3-5条应用的AWS最佳实践
 
-对于架构图描述，请使用以下格式，以便Python Diagrams库可以正确生成图表:
-- nodes: 包含所有节点信息的数组，每个节点包含id、type和name
-  - id: 节点唯一标识符
-  - type: AWS服务类型，必须是以下之一: EC2, Lambda, ECS, Fargate, EKS, ElasticBeanstalk, RDS, Dynamodb, ElastiCache, Aurora, Redshift, VPC, ELB, ALB, NLB, CloudFront, Route53, APIGateway, S3, EFS, EBS, IAM, Cognito, WAF, Shield, SQS, SNS, Eventbridge, Cloudwatch, Cloudtrail, Cloudformation
-  - name: 节点显示名称
-- connections: 包含所有连接信息的数组，每个连接包含from、to和label
-  - from: 源节点的id
-  - to: 目标节点的id
-  - label: 连接的标签（可选）
+对于架构图描述，使用以下JSON格式:
+- nodes: 节点数组，每个节点包含id、type和name
+- connections: 连接数组，每个连接包含from、to和label
 
-请直接返回JSON格式结果，不要使用Markdown代码块，包含以下字段:
+请直接返回JSON格式结果，包含以下字段:
 - architecture_overview: 架构概述
 - components: 架构组件列表，每个组件包含name、service_type、description字段
 - diagram_description: 架构图描述，包含nodes和connections
 - design_decisions: 设计决策列表
-- best_practices: 应用的最佳实践列表
+- best_practices: 最佳实践列表
 """.format(requirements)
         
         return prompt
     
-    def _call_api(self, prompt: str) -> Dict[str, Any]:
+    def _call_api(self, prompt: str, stream_callback=None) -> Dict[str, Any]:
         """
         调用千问API
         
         Args:
             prompt: 提示词
+            stream_callback: 流式响应回调函数，接收部分响应文本
             
         Returns:
             Dict: API响应
@@ -170,26 +158,102 @@ class QianwenAPI:
             "Content-Type": "application/json"
         }
         
+        # 根据是否需要流式响应设置参数
+        stream_mode = stream_callback is not None
+        
         data = {
-            "model": "qwen-max",
+            "model": self.model,  # 使用配置的模型
             "input": {
                 "prompt": prompt
             },
             "parameters": {
                 "temperature": 0.7,
                 "top_p": 0.8,
-                "result_format": "json"
+                "result_format": "json",
+                "max_tokens": 2000,  # 限制输出长度以加快响应
+                "stream": stream_mode  # 启用流式响应
             }
         }
         
         try:
-            logger.info("发送请求到千问API")
-            response = requests.post(self.api_url, headers=headers, json=data)
-            response.raise_for_status()
-            logger.info("收到千问API响应")
-            return self._parse_response(response.json())
-        except requests.exceptions.RequestException as e:
-            logger.error(f"API请求失败: {str(e)}")
+            logger.info(f"发送请求到千问API (模型: {self.model}, 流式模式: {stream_mode})")
+            
+            # 添加重试机制
+            max_retries = 2
+            retry_count = 0
+            timeout = 120  # 减少超时时间
+            
+            while retry_count <= max_retries:
+                try:
+                    if stream_mode:
+                        # 流式响应处理
+                        return self._handle_streaming_response(prompt, headers, data, stream_callback)
+                    else:
+                        # 普通响应处理
+                        response = requests.post(self.api_url, headers=headers, json=data, timeout=timeout)
+                        response.raise_for_status()
+                        logger.info("收到千问API响应")
+                        return self._parse_response(response.json())
+                except requests.exceptions.Timeout:
+                    retry_count += 1
+                    logger.warning(f"API请求超时 (尝试 {retry_count}/{max_retries})")
+                    if retry_count > max_retries:
+                        return {"error": "API请求多次超时，请稍后再试"}
+                except requests.exceptions.RequestException as e:
+                    logger.error(f"API请求失败: {str(e)}")
+                    return {"error": str(e)}
+                
+        except Exception as e:
+            logger.error(f"API调用异常: {str(e)}")
+            return {"error": str(e)}
+    
+    def _handle_streaming_response(self, prompt: str, headers: Dict[str, str], data: Dict[str, Any], 
+                                 stream_callback) -> Dict[str, Any]:
+        """
+        处理流式API响应
+        
+        Args:
+            prompt: 提示词
+            headers: 请求头
+            data: 请求数据
+            stream_callback: 流式响应回调函数
+            
+        Returns:
+            Dict: 完整的API响应
+        """
+        full_text = ""
+        
+        try:
+            with requests.post(self.api_url, headers=headers, json=data, stream=True, timeout=60) as response:
+                response.raise_for_status()
+                
+                for line in response.iter_lines():
+                    if line:
+                        # 解析SSE格式的数据
+                        line_text = line.decode('utf-8')
+                        if line_text.startswith('data:'):
+                            json_str = line_text[5:].strip()
+                            if json_str:
+                                try:
+                                    chunk_data = json.loads(json_str)
+                                    if "output" in chunk_data and "text" in chunk_data["output"]:
+                                        chunk_text = chunk_data["output"]["text"]
+                                        # 计算增量文本
+                                        new_text = chunk_text[len(full_text):]
+                                        full_text = chunk_text
+                                        
+                                        # 调用回调函数处理增量文本
+                                        if stream_callback and new_text:
+                                            stream_callback(new_text)
+                                except json.JSONDecodeError:
+                                    logger.warning(f"无法解析流式响应片段: {json_str}")
+            
+            # 处理完整响应
+            logger.info("流式响应接收完成")
+            return self._parse_response({"output": {"text": full_text}})
+            
+        except Exception as e:
+            logger.error(f"流式响应处理失败: {str(e)}")
             return {"error": str(e)}
     
     def _parse_response(self, response: Dict[str, Any]) -> Dict[str, Any]:
