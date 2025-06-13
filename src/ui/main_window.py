@@ -8,16 +8,16 @@
 
 import os
 import sys
+import logging
 from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
                            QSplitter, QMessageBox, QStatusBar, QToolBar, 
-                           QFileDialog, QTabWidget, QPushButton, QLabel)
-from PyQt6.QtCore import Qt, QSize
-from PyQt6.QtGui import QAction, QIcon
+                           QFileDialog, QTabWidget, QPushButton, QLabel, QTextEdit)
+from PyQt6.QtCore import Qt, QSize, QMetaObject, Q_ARG
+from PyQt6.QtGui import QAction, QIcon, QFont
 
 from src.ui.chat_panel import ChatPanel
 from src.ui.output_panel import OutputPanel
 from src.ui.session_panel import SessionPanel
-from src.ui.log_console import LogConsole
 from src.api.qianwen_api import QianwenAPI
 from src.core.session_manager import SessionManager
 from src.core.architecture_generator import ArchitectureGenerator
@@ -58,6 +58,9 @@ class MainWindow(QMainWindow):
         if not self.session_manager.get_active_session():
             self.session_manager.create_session()
             self.session_panel.refresh()
+            
+        # 设置窗口大小变化事件
+        self.resizeEvent = self._on_resize
     
     def _create_ui(self):
         """创建UI组件"""
@@ -104,38 +107,46 @@ class MainWindow(QMainWindow):
         # 将工作区添加到上部布局
         upper_layout.addWidget(work_area, 1)  # 1表示伸展因子，使工作区占据更多空间
         
-        # 将上部面板添加到主布局
-        main_layout.addWidget(upper_panel, 4)  # 上部占4份
+        # 创建主分割器，包含上部面板和日志控制台
+        self.main_splitter = QSplitter(Qt.Orientation.Vertical)
+        self.main_splitter.setChildrenCollapsible(False)  # 防止完全折叠
+        self.main_splitter.setHandleWidth(8)  # 增加分割条宽度，便于拖动
+        
+        # 将上部面板添加到主分割器
+        self.main_splitter.addWidget(upper_panel)
         
         # 创建日志控制台面板
         self.log_console = LogConsole()
         
-        # 创建日志控制台容器和布局
+        # 创建日志控制台容器
         log_container = QWidget()
-        log_layout = QHBoxLayout(log_container)
+        log_layout = QVBoxLayout(log_container)
         log_layout.setContentsMargins(0, 0, 0, 0)
         
-        # 添加日志控制台标签
+        # 添加日志控制台标题和按钮
+        header_layout = QHBoxLayout()
         log_label = QLabel("日志控制台:")
-        log_layout.addWidget(log_label)
-        
-        # 添加清空日志按钮
+        header_layout.addWidget(log_label)
         clear_log_button = QPushButton("清空日志")
         clear_log_button.clicked.connect(self.log_console.clear)
-        log_layout.addWidget(clear_log_button)
+        header_layout.addWidget(clear_log_button)
+        header_layout.addStretch(1)
+        log_layout.addLayout(header_layout)
         
-        # 添加伸展空间
-        log_layout.addStretch(1)
+        # 添加日志控制台
+        log_layout.addWidget(self.log_console)
         
-        # 创建日志控制台区域
-        log_area = QWidget()
-        log_area_layout = QVBoxLayout(log_area)
-        log_area_layout.setContentsMargins(0, 0, 0, 0)
-        log_area_layout.addWidget(log_container)
-        log_area_layout.addWidget(self.log_console)
+        # 将日志容器添加到主分割器
+        self.main_splitter.addWidget(log_container)
         
-        # 将日志区域添加到主布局
-        main_layout.addWidget(log_area, 1)  # 日志区域占1份
+        # 设置分割器比例 (上部占75%，日志占25%)
+        self.main_splitter.setSizes([750, 250])
+        
+        # 将主分割器添加到主布局
+        main_layout.addWidget(self.main_splitter)
+        
+        # 连接分割器移动信号
+        self.main_splitter.splitterMoved.connect(self._on_splitter_moved)
     
     def _create_toolbar(self):
         """创建工具栏"""
@@ -154,6 +165,12 @@ class MainWindow(QMainWindow):
         export_diagram_action.setStatusTip("导出架构图")
         export_diagram_action.triggered.connect(self._export_diagram)
         toolbar.addAction(export_diagram_action)
+        
+        # 导出Mermaid图表按钮
+        export_mermaid_action = QAction("导出Mermaid", self)
+        export_mermaid_action.setStatusTip("导出Mermaid格式的架构图")
+        export_mermaid_action.triggered.connect(self._export_mermaid)
+        toolbar.addAction(export_mermaid_action)
         
         toolbar.addSeparator()
         
@@ -213,6 +230,13 @@ class MainWindow(QMainWindow):
         
         # 检查是否是第一次交互
         is_first_interaction = len(active_session.interactions) == 0
+        
+        # 立即保存用户输入到会话
+        # 创建一个临时的响应对象，后续会更新
+        temp_response = {"status": "processing", "user_input": message}
+        self.session_manager.add_interaction(message, temp_response)
+        # 刷新会话面板，显示最新会话状态
+        self.session_panel.refresh()
         
         # 使用QThread处理API调用
         from PyQt6.QtCore import QThread, pyqtSignal
@@ -305,10 +329,11 @@ class MainWindow(QMainWindow):
         self.output_panel.display_architecture(response)
         self.statusBar.showMessage("架构设计生成完成")
         
-        # 保存到当前会话
+        # 更新会话中的响应
         active_session = self.session_manager.get_active_session()
         if active_session:
-            self.session_manager.add_interaction(requirements, response)
+            # 更新最后一个交互的响应
+            self.session_manager.update_last_interaction(response)
             self.session_panel.refresh()
         
         # 启用输入面板
@@ -330,7 +355,7 @@ class MainWindow(QMainWindow):
             return
         
         file_path, _ = QFileDialog.getSaveFileName(
-            self, "保存架构设计", "", "Markdown文件 (*.md);;JSON文件 (*.json);;所有文件 (*)"
+            self, "保存架构设计", "", "Markdown文件 (*.md);;JSON文件 (*.json);;Mermaid文件 (*.mmd);;所有文件 (*)"
         )
         
         if file_path:
@@ -357,6 +382,22 @@ class MainWindow(QMainWindow):
             except Exception as e:
                 QMessageBox.critical(self, "导出错误", f"导出图表时发生错误: {str(e)}")
     
+    def _export_mermaid(self):
+        """导出Mermaid格式的架构图"""
+        file_path, _ = QFileDialog.getSaveFileName(
+            self, "导出Mermaid图表", "", "Mermaid文件 (*.mmd);;所有文件 (*)"
+        )
+        
+        if file_path:
+            try:
+                # 确保文件扩展名为.mmd
+                if not file_path.lower().endswith('.mmd'):
+                    file_path += '.mmd'
+                self.output_panel.export_diagram(file_path)
+                self.statusBar.showMessage(f"Mermaid图表已导出到 {file_path}")
+            except Exception as e:
+                QMessageBox.critical(self, "导出错误", f"导出Mermaid图表时发生错误: {str(e)}")
+    
     def _create_new_session(self):
         """创建新会话"""
         # 清理没有交互的会话
@@ -375,6 +416,7 @@ class MainWindow(QMainWindow):
         self.output_panel.practices_tab.clear()
         self.output_panel.json_tab.clear()
         self.output_panel.diagram_image_label.setText("尚未生成架构图")
+        self.output_panel.clear_mermaid()
         
         self.statusBar.showMessage("已创建新会话")
     
@@ -416,6 +458,7 @@ class MainWindow(QMainWindow):
             self.output_panel.practices_tab.clear()
             self.output_panel.json_tab.clear()
             self.output_panel.diagram_image_label.setText("尚未生成架构图")
+            self.output_panel.clear_mermaid()
         
         self.statusBar.showMessage(f"已加载会话: {session.name}")
     
@@ -469,6 +512,7 @@ class MainWindow(QMainWindow):
             self.output_panel.practices_tab.clear()
             self.output_panel.json_tab.clear()
             self.output_panel.diagram_image_label.setText("尚未生成架构图")
+            self.output_panel.clear_mermaid()
             
             # 清空聊天面板
             self.chat_panel.clear()
@@ -493,8 +537,119 @@ class MainWindow(QMainWindow):
         self.output_panel.practices_tab.clear()
         self.output_panel.json_tab.clear()
         self.output_panel.diagram_image_label.setText("尚未生成架构图")
+        self.output_panel.clear_mermaid()
         
         # 清空聊天面板
         self.chat_panel.clear()
         
         self.statusBar.showMessage("已创建新会话")
+        
+    def _on_splitter_moved(self, pos, index):
+        """
+        处理分割器移动事件
+        
+        Args:
+            pos: 新位置
+            index: 分割器索引
+        """
+        # 获取窗口总高度
+        total_height = self.height()
+        
+        # 获取当前分割比例
+        sizes = self.main_splitter.sizes()
+        
+        # 如果日志控制台高度超过窗口高度的50%，限制其大小
+        if sizes[1] > total_height * 0.5:
+            # 设置为50%的高度
+            self.main_splitter.setSizes([int(total_height * 0.5), int(total_height * 0.5)])
+            
+        # 确保上部分至少有30%的高度
+        elif sizes[0] < total_height * 0.3:
+            # 设置上部分至少有30%的高度
+            self.main_splitter.setSizes([int(total_height * 0.3), int(total_height * 0.7)])
+            
+    def _on_resize(self, event):
+        """
+        处理窗口大小变化事件
+        
+        Args:
+            event: 大小变化事件
+        """
+        # 调用父类的resizeEvent
+        super().resizeEvent(event)
+        
+        # 获取窗口总高度
+        total_height = self.height()
+        
+        # 获取当前分割比例
+        sizes = self.main_splitter.sizes()
+        total_size = sum(sizes)
+        
+        if total_size > 0:
+            # 计算比例
+            ratio_0 = sizes[0] / total_size
+            ratio_1 = sizes[1] / total_size
+            
+            # 根据比例重新设置大小
+            self.main_splitter.setSizes([int(total_height * ratio_0), int(total_height * ratio_1)])
+            
+            # 确保日志控制台不超过50%
+            if sizes[1] > total_height * 0.5:
+                self.main_splitter.setSizes([int(total_height * 0.5), int(total_height * 0.5)])
+
+# 日志控制台类
+class LogConsole(QTextEdit):
+    """日志控制台"""
+    
+    def __init__(self):
+        """初始化日志控制台"""
+        super().__init__()
+        self.setReadOnly(True)
+        self.setMinimumHeight(50)  # 设置最小高度
+        self.setFont(QFont("Courier New", 9))
+        
+        # 设置样式，使其更明显
+        self.setStyleSheet("background-color: #f5f5f5; border: 1px solid #ddd;")
+        
+        # 设置日志处理器
+        self.log_handler = LogHandler(self)
+        
+        # 获取根日志记录器并添加处理器
+        root_logger = logging.getLogger()
+        root_logger.addHandler(self.log_handler)
+        
+        # 初始化消息
+        self.append("日志控制台已初始化，等待日志...")
+    
+    def clear(self):
+        """清空日志"""
+        super().clear()
+        self.append("日志已清空...")
+
+# 日志处理器类
+class LogHandler(logging.Handler):
+    """日志处理器"""
+    
+    def __init__(self, console):
+        """初始化日志处理器"""
+        logging.Handler.__init__(self)
+        self.console = console
+        self.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+        
+    def emit(self, record):
+        """发送日志记录"""
+        msg = self.format(record)
+        # 使用Qt的信号槽机制在UI线程中更新文本
+        QMetaObject.invokeMethod(
+            self.console, 
+            "append", 
+            Qt.ConnectionType.QueuedConnection,
+            Q_ARG(str, msg)
+        )
+        # 滚动到底部
+        QMetaObject.invokeMethod(
+            self.console.verticalScrollBar(), 
+            "setValue", 
+            Qt.ConnectionType.QueuedConnection,
+            Q_ARG(int, self.console.verticalScrollBar().maximum())
+        )

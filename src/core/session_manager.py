@@ -220,6 +220,19 @@ class SessionManager:
         else:
             logger.warning("没有活动会话，无法添加交互记录")
     
+    def update_last_interaction(self, ai_response: Dict[str, Any]) -> None:
+        """
+        更新最后一个交互的响应
+        
+        Args:
+            ai_response: AI响应
+        """
+        if self.active_session and self.active_session.interactions:
+            self.active_session.interactions[-1]["ai_response"] = ai_response
+            self.active_session.current_architecture = ai_response
+            self._save_session(self.active_session)
+            logger.info(f"更新会话 {self.active_session.session_id} 的最后一个交互")
+    
     def rename_session(self, session_id: str, new_name: str) -> bool:
         """
         重命名会话
