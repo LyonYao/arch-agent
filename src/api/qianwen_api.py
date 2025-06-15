@@ -71,6 +71,7 @@ class QianwenAPI(BaseAPIClient):
             prompt = self._create_architecture_prompt(requirements)
             logger.info("调用千问API生成架构设计")
             
+        print(prompt)
         return self._call_api(prompt, stream_callback)
     
     def _create_architecture_prompt(self, requirements: str) -> str:
@@ -83,7 +84,15 @@ class QianwenAPI(BaseAPIClient):
         Returns:
             str: 格式化的提示词
         """
-        prompt = """作为AWS解决方案架构师，请根据以下需求设计简洁的AWS架构方案。考虑AWS Well-Architected Framework的关键原则。
+        from src.utils.prompt_manager import PromptManager
+        
+        # 获取提示词模板
+        prompt_manager = PromptManager()
+        prompt_template = prompt_manager.get_prompt("qianwen", "architecture")
+        
+        # 如果没有找到配置的提示词，使用默认提示词
+        if not prompt_template:
+            prompt_template = """作为AWS解决方案架构师，请根据以下需求设计简洁的AWS架构方案。考虑AWS Well-Architected Framework的关键原则。
 
 系统需求:
 {0}
@@ -100,48 +109,10 @@ class QianwenAPI(BaseAPIClient):
 对于架构组件，必须使用以下AWS服务类型之一作为service_type字段的值：
 EC2, Lambda, ECS, Fargate, EKS, ElasticBeanstalk, RDS, DynamoDB, ElastiCache, Aurora, Redshift, 
 VPC, ELB, ALB, NLB, CloudFront, Route53, APIGateway, S3, EFS, EBS, IAM, Cognito, WAF, Shield, 
-SQS, SNS, EventBridge, CloudWatch, CloudTrail, CloudFormation
-
-对于架构图描述，使用以下JSON格式:
-- nodes: 节点数组，每个节点包含id、type和name，其中type必须是上述AWS服务类型之一
-- connections: 连接数组，每个连接包含from、to和label
-
-请直接返回JSON格式结果，包含以下字段:
-- architecture_overview: 架构概述
-- components: 架构组件列表，每个组件包含name、service_type、description字段
-- diagram_description: 架构图描述，包含nodes和connections
-- design_decisions: 设计决策列表
-- best_practices: 最佳实践列表
-
-示例格式:
-{{
-  "components": [
-    {{
-      "name": "Web服务器",
-      "service_type": "EC2",
-      "description": "运行Web应用的EC2实例"
-    }},
-    {{
-      "name": "用户认证服务",
-      "service_type": "Cognito",
-      "description": "管理用户身份验证和授权"
-    }}
-  ],
-  "diagram_description": {{
-    "nodes": [
-      {{"id": "web", "type": "EC2", "name": "Web服务器"}},
-      {{"id": "auth", "type": "Cognito", "name": "用户认证服务"}}
-    ],
-    "connections": [
-      {{"from": "web", "to": "auth", "label": "认证请求"}}
-    ]
-  }}
-}}
-
-注意：确保所有service_type和type字段都使用上述列出的AWS服务类型，不要使用"Service"或其他通用类型。
-重要：在components和diagram_description中的name字段不能包含方括号[]、圆括号()等特殊字符，以确保生成的图表正确显示。""".format(requirements)
+SQS, SNS, EventBridge, CloudWatch, CloudTrail, CloudFormation"""
         
-        return prompt
+        # 格式化提示词
+        return prompt_template.format(requirements)
     
     def _create_adjustment_prompt(self, requirements: str) -> str:
         """
@@ -153,7 +124,15 @@ SQS, SNS, EventBridge, CloudWatch, CloudTrail, CloudFormation
         Returns:
             str: 格式化的提示词
         """
-        prompt = """作为AWS解决方案架构师，请根据以下信息简洁调整现有AWS架构方案。
+        from src.utils.prompt_manager import PromptManager
+        
+        # 获取提示词模板
+        prompt_manager = PromptManager()
+        prompt_template = prompt_manager.get_prompt("qianwen", "adjustment")
+        
+        # 如果没有找到配置的提示词，使用默认提示词
+        if not prompt_template:
+            prompt_template = """作为AWS解决方案架构师，请根据以下信息简洁调整现有AWS架构方案。
 
 {0}
 
@@ -169,48 +148,10 @@ SQS, SNS, EventBridge, CloudWatch, CloudTrail, CloudFormation
 对于架构组件，必须使用以下AWS服务类型之一作为service_type字段的值：
 EC2, Lambda, ECS, Fargate, EKS, ElasticBeanstalk, RDS, DynamoDB, ElastiCache, Aurora, Redshift, 
 VPC, ELB, ALB, NLB, CloudFront, Route53, APIGateway, S3, EFS, EBS, IAM, Cognito, WAF, Shield, 
-SQS, SNS, EventBridge, CloudWatch, CloudTrail, CloudFormation
-
-对于架构图描述，使用以下JSON格式:
-- nodes: 节点数组，每个节点包含id、type和name，其中type必须是上述AWS服务类型之一
-- connections: 连接数组，每个连接包含from、to和label
-
-请直接返回JSON格式结果，包含以下字段:
-- architecture_overview: 架构概述
-- components: 架构组件列表，每个组件包含name、service_type、description字段
-- diagram_description: 架构图描述，包含nodes和connections
-- design_decisions: 设计决策列表
-- best_practices: 最佳实践列表
-
-示例格式:
-{{
-  "components": [
-    {{
-      "name": "Web服务器",
-      "service_type": "EC2",
-      "description": "运行Web应用的EC2实例"
-    }},
-    {{
-      "name": "用户认证服务",
-      "service_type": "Cognito",
-      "description": "管理用户身份验证和授权"
-    }}
-  ],
-  "diagram_description": {{
-    "nodes": [
-      {{"id": "web", "type": "EC2", "name": "Web服务器"}},
-      {{"id": "auth", "type": "Cognito", "name": "用户认证服务"}}
-    ],
-    "connections": [
-      {{"from": "web", "to": "auth", "label": "认证请求"}}
-    ]
-  }}
-}}
-
-注意：确保所有service_type和type字段都使用上述列出的AWS服务类型，不要使用"Service"或其他通用类型。
-重要：在components和diagram_description中的name字段不能包含方括号[]、圆括号()等特殊字符，以确保生成的图表正确显示。""".format(requirements)
+SQS, SNS, EventBridge, CloudWatch, CloudTrail, CloudFormation"""
         
-        return prompt
+        # 格式化提示词
+        return prompt_template.format(requirements)
     
     def _call_api(self, prompt: str, stream_callback=None) -> Dict[str, Any]:
         """

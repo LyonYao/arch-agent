@@ -6,7 +6,6 @@
 
 - 必须使用AWS原生服务而非自建服务，除非有特殊需求
 - 容器化应用必须使用ECS或EKS，禁止使用自建容器编排
-- 无服务器应用必须使用Lambda和API Gateway
 - 关系型数据库优先使用Aurora而非RDS MySQL/PostgreSQL
 - 禁止使用已被AWS标记为即将淘汰的服务
 - 大数据处理必须使用EMR或Athena，禁止使用自建Hadoop集群
