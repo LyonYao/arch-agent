@@ -135,8 +135,40 @@ class ChatHistoryPanel(QWidget):
         Returns:
             int: 消息索引
         """
-        self.add_system_message("正在思考中...")
+        # 创建带有动画效果的思考消息
+        thinking_text = "正在思考中"
+        message = ChatMessage(thinking_text + "...", False)
+        
+        # 移除弹性空间
+        self.chat_layout.removeItem(self.chat_layout.itemAt(self.chat_layout.count() - 1))
+        
+        # 添加消息
+        self.chat_layout.addWidget(message)
+        
+        # 重新添加弹性空间
+        self.chat_layout.addStretch()
+        
+        # 滚动到底部
+        self.chat_scroll.verticalScrollBar().setValue(self.chat_scroll.verticalScrollBar().maximum())
+        
+        # 启动动画计时器
+        from PyQt6.QtCore import QTimer
+        self.thinking_timer = QTimer()
+        self.thinking_timer.timeout.connect(lambda: self._update_thinking_animation(message, thinking_text))
+        self.thinking_dots = 0
+        self.thinking_timer.start(500)  # 每500毫秒更新一次
+        
         return self.chat_layout.count() - 2  # 返回消息索引（减去弹性空间）
+    
+    def _update_thinking_animation(self, message_widget, base_text):
+        """更新思考动画"""
+        self.thinking_dots = (self.thinking_dots + 1) % 4
+        dots = "." * self.thinking_dots
+        # 找到消息文本标签（第二个子部件）
+        for i in range(message_widget.layout().count()):
+            item = message_widget.layout().itemAt(i)
+            if item and isinstance(item.widget(), QLabel) and i == 1:
+                item.widget().setText(base_text + "." * self.thinking_dots + " " * (3 - self.thinking_dots))
     
     def update_thinking_message(self, index, text):
         """
@@ -149,6 +181,10 @@ class ChatHistoryPanel(QWidget):
         # 获取消息组件
         item = self.chat_layout.itemAt(index)
         if item and item.widget():
+            # 停止思考动画计时器
+            if hasattr(self, 'thinking_timer') and self.thinking_timer.isActive():
+                self.thinking_timer.stop()
+            
             # 移除旧消息
             old_message = item.widget()
             self.chat_layout.removeWidget(old_message)

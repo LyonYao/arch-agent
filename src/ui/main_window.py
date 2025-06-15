@@ -18,9 +18,14 @@ from PyQt6.QtGui import QAction, QIcon, QFont
 from src.ui.chat_panel import ChatPanel
 from src.ui.output_panel import OutputPanel
 from src.ui.session_panel import SessionPanel
-from src.api.qianwen_api import QianwenAPI
+from src.ui.model_config_dialog import ModelConfigDialog
+from src.api.api_factory import APIFactory
 from src.core.session_manager import SessionManager
 from src.core.architecture_generator import ArchitectureGenerator
+from src.utils.logger import get_logger
+
+# 获取日志记录器
+logger = get_logger(__name__)
 
 class MainWindow(QMainWindow):
     """应用程序主窗口"""
@@ -33,14 +38,24 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("架构设计Agent")
         self.setMinimumSize(1200, 800)
         
+        # 设置应用图标
+        icon_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 
+                               "resources", "icons", "app_icon.png")
+        if os.path.exists(icon_path):
+            self.setWindowIcon(QIcon(icon_path))
+        
         # 初始化会话管理器
         self.session_manager = SessionManager()
         
         # 初始化API客户端
         try:
-            self.api_client = QianwenAPI()
-            # 初始化架构生成器
+            # 初始化架构生成器（内部会创建API客户端）
             self.architecture_generator = ArchitectureGenerator()
+            # 获取API客户端引用
+            self.api_client = self.architecture_generator.api_client
+            # 保存API工厂引用
+            from src.api.api_factory import APIFactory
+            self.api_factory = APIFactory
         except ValueError as e:
             QMessageBox.critical(self, "API配置错误", str(e))
             sys.exit(1)
@@ -185,12 +200,23 @@ class MainWindow(QMainWindow):
         clear_all_sessions_action.setStatusTip("删除所有会话")
         clear_all_sessions_action.triggered.connect(self._clear_all_sessions)
         toolbar.addAction(clear_all_sessions_action)
+        
+        toolbar.addSeparator()
+        
+        # AI模型配置按钮
+        model_config_action = QAction("AI模型配置", self)
+        model_config_action.setStatusTip("配置AI模型参数")
+        model_config_action.triggered.connect(self._show_model_config_dialog)
+        toolbar.addAction(model_config_action)
     
     def _create_statusbar(self):
         """创建状态栏"""
         self.statusBar = QStatusBar()
         self.setStatusBar(self.statusBar)
-        self.statusBar.showMessage("就绪")
+        
+        # 显示当前AI模型信息
+        current_model = self.api_client.model_name if hasattr(self.api_client, 'model_name') else "未知"
+        self.statusBar.showMessage(f"就绪 - 当前AI模型: {current_model}")
     
     def _create_connections(self):
         """创建信号连接"""
@@ -200,6 +226,36 @@ class MainWindow(QMainWindow):
         # 会话面板
         self.session_panel.session_selected.connect(self._on_session_selected)
         self.session_panel.session_created.connect(self._on_session_created)
+        
+    def _show_model_config_dialog(self):
+        """显示AI模型配置对话框"""
+        dialog = ModelConfigDialog(self)
+        dialog.model_config_changed.connect(self._on_model_config_changed)
+        dialog.exec()
+        
+    def _on_model_config_changed(self, ai_type):
+        """
+        处理模型配置变更
+        
+        Args:
+            ai_type: 新的AI模型类型
+        """
+        try:
+            # 重新创建API客户端
+            self.api_client = self.api_factory.create_api_client(ai_type)
+            
+            # 更新架构生成器的API客户端
+            self.architecture_generator.update_api_client(ai_type)
+            
+            # 更新状态栏显示当前模型信息
+            self.statusBar.showMessage(f"已切换AI模型: {self.api_client.model_name}")
+            
+            # 记录日志
+            logger.info(f"已切换AI模型类型为: {ai_type}, 模型: {self.api_client.model_name}")
+            
+        except Exception as e:
+            QMessageBox.critical(self, "模型切换错误", f"切换AI模型时发生错误: {str(e)}")
+            logger.error(f"切换AI模型失败: {str(e)}")
     
     # 保存线程引用，防止线程被垃圾回收
     api_threads = []
@@ -408,6 +464,9 @@ class MainWindow(QMainWindow):
         
         # 刷新会话列表
         self.session_panel.refresh()
+        
+        # 清空聊天面板
+        self.chat_panel.clear()
         
         # 清空输出面板
         self.output_panel.overview_tab.clear()

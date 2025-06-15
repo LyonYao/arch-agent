@@ -665,8 +665,8 @@ class OutputPanel(QWidget):
                 if not line or line.startswith("graph") or line.startswith("classDef") or line.startswith("class") or "-->" in line:
                     continue
                 
-                # 解析节点定义行
-                if "[" in line and "]" in line:
+                # 解析矩形节点 [内容]
+                if "[" in line and "]" in line and not "(" in line:
                     # 提取节点ID和内容
                     parts = line.split("[", 1)
                     node_id = parts[0].strip()
@@ -687,7 +687,7 @@ class OutputPanel(QWidget):
                         "name": node_name,
                         "type": node_type
                     })
-                    logger.info(f"解析到节点: ID={node_id}, 名称={node_name}, 类型={node_type}")
+                    logger.info(f"解析到矩形节点: ID={node_id}, 名称={node_name}, 类型={node_type}")
                 
                 # 解析圆柱形节点 [(内容)]
                 elif "[(" in line and ")]" in line:
@@ -709,6 +709,27 @@ class OutputPanel(QWidget):
                         "type": node_type
                     })
                     logger.info(f"解析到圆柱形节点: ID={node_id}, 名称={node_name}, 类型={node_type}")
+                
+                # 解析菱形节点 {内容}
+                elif "{" in line and "}" in line:
+                    parts = line.split("{", 1)
+                    node_id = parts[0].strip()
+                    content = parts[1].split("}")[0]
+                    
+                    if "<br/>" in content:
+                        name_parts = content.split("<br/>")
+                        node_name = name_parts[0].strip()
+                        node_type = name_parts[1].strip()
+                    else:
+                        node_name = content.strip()
+                        node_type = "APIGateway"
+                    
+                    nodes.append({
+                        "id": node_id,
+                        "name": node_name,
+                        "type": node_type
+                    })
+                    logger.info(f"解析到菱形节点: ID={node_id}, 名称={node_name}, 类型={node_type}")
             
             # 解析连接
             for line in lines:
@@ -722,8 +743,12 @@ class OutputPanel(QWidget):
                     # 处理带标签的连接
                     if "|" in parts[1]:
                         label_parts = parts[1].split("|")
-                        label = label_parts[1].strip()
-                        to_id = label_parts[2].strip()
+                        if len(label_parts) >= 3:  # 确保格式是 from -->|label| to
+                            label = label_parts[1].strip()
+                            to_id = label_parts[2].strip()
+                        else:
+                            to_id = label_parts[-1].strip()
+                            label = label_parts[0].strip() if len(label_parts) > 1 else ""
                     else:
                         to_id = parts[1].strip()
                         label = ""
@@ -804,13 +829,37 @@ class OutputPanel(QWidget):
             "architecture_overview": "从Mermaid编辑器生成的架构图",
             "components": [],
             "diagram_description": {
-                "nodes": nodes,
-                "connections": connections
+                "nodes": [],
+                "connections": []
             }
         }
         
-        # 从节点生成组件列表
+        # 确保节点ID格式一致
+        cleaned_nodes = []
         for node in nodes:
+            cleaned_node = {
+                "id": node["id"].strip(),
+                "name": node["name"],
+                "type": node["type"]
+            }
+            cleaned_nodes.append(cleaned_node)
+            
+        # 确保连接ID格式一致
+        cleaned_connections = []
+        for conn in connections:
+            cleaned_conn = {
+                "from": conn["from"].strip(),
+                "to": conn["to"].strip(),
+                "label": conn["label"]
+            }
+            cleaned_connections.append(cleaned_conn)
+        
+        # 更新架构数据
+        architecture_data["diagram_description"]["nodes"] = cleaned_nodes
+        architecture_data["diagram_description"]["connections"] = cleaned_connections
+        
+        # 从节点生成组件列表
+        for node in cleaned_nodes:
             architecture_data["components"].append({
                 "name": node["name"],
                 "service_type": node["type"],

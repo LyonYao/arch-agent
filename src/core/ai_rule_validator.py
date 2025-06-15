@@ -10,7 +10,7 @@ import os
 import json
 from typing import Dict, Any, List, Tuple, Optional
 
-from src.api.qianwen_api import QianwenAPI
+from src.api.base_api import BaseAPIClient
 from src.utils.logger import get_logger
 
 # 获取日志记录器
@@ -19,13 +19,13 @@ logger = get_logger(__name__)
 class AIRuleValidator:
     """AI架构规则验证器"""
     
-    def __init__(self, rules_dir: str = None, api_client: QianwenAPI = None):
+    def __init__(self, rules_dir: str = None, api_client=None):
         """
         初始化AI规则验证器
         
         Args:
             rules_dir: 规则文件目录，如果为None则使用默认目录
-            api_client: 千问API客户端，如果为None则创建新实例
+            api_client: API客户端，如果为None则创建新实例
         """
         logger.warning("初始化AI规则验证器")
         
@@ -47,7 +47,9 @@ class AIRuleValidator:
             os.makedirs(self.rules_dir, exist_ok=True)
         
         # 初始化API客户端
-        self.api_client = api_client or QianwenAPI()
+        from src.api.api_factory import APIFactory
+        self.api_client = api_client or APIFactory.create_api_client()
+        logger.warning(f"AI规则验证器使用模型: {self.api_client.model_name}")
         
         # 加载规则
         logger.warning("开始加载规则...")

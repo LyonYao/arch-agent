@@ -9,31 +9,46 @@
 import os
 import json
 import re
-import requests
 from typing import Dict, List, Any, Optional
 from dotenv import load_dotenv
 from src.utils.logger import get_logger
-
-# 加载环境变量
-load_dotenv()
+from src.api.base_api import BaseAPIClient
 
 # 获取日志记录器
 logger = get_logger(__name__)
 
-class QianwenAPI:
+class QianwenAPI(BaseAPIClient):
     """千问API客户端类"""
     
     def __init__(self):
         """初始化千问API客户端"""
         self.api_key = os.getenv("QIANWEN_API_KEY")
-        self.api_url = os.getenv("QIANWEN_API_URL", 
-                               "https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation")
-        self.model = os.getenv("QIANWEN_MODEL", "qwen-plus")  # 默认使用qwen-plus模型
+        self._model = os.getenv("QIANWEN_MODEL", "qwen-plus")  # 默认使用qwen-plus模型
         
         if not self.api_key:
             raise ValueError("未设置千问API密钥，请在.env文件中设置QIANWEN_API_KEY")
             
-        logger.info(f"初始化千问API客户端，使用模型: {self.model}")
+        # 导入dashscope库
+        try:
+            import dashscope
+            self.dashscope = dashscope
+            # 设置API密钥
+            dashscope.api_key = self.api_key
+            logger.info("成功导入dashscope库")
+        except ImportError:
+            logger.warning("未找到dashscope库，将使用requests库作为备选方案")
+            self.dashscope = None
+            import requests
+            self.requests = requests
+            self.api_url = os.getenv("QIANWEN_API_URL", 
+                                   "https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation")
+            
+        logger.info(f"初始化千问API客户端，使用模型: {self._model}")
+    
+    @property
+    def model_name(self) -> str:
+        """获取当前使用的模型名称"""
+        return self._model
     
     def generate_architecture(self, requirements: str, stream_callback=None) -> Dict[str, Any]:
         """
@@ -80,6 +95,8 @@ class QianwenAPI:
 4. 设计决策：3-5条关键设计决策(每条20-40字)
 5. 最佳实践：3-5条应用的AWS最佳实践(每条15-30字)
 
+重要：在components和diagram_description中的name字段不能包含方括号[]、圆括号()等特殊字符，以确保生成的图表正确显示。
+
 对于架构组件，必须使用以下AWS服务类型之一作为service_type字段的值：
 EC2, Lambda, ECS, Fargate, EKS, ElasticBeanstalk, RDS, DynamoDB, ElastiCache, Aurora, Redshift, 
 VPC, ELB, ALB, NLB, CloudFront, Route53, APIGateway, S3, EFS, EBS, IAM, Cognito, WAF, Shield, 
@@ -105,7 +122,7 @@ SQS, SNS, EventBridge, CloudWatch, CloudTrail, CloudFormation
       "description": "运行Web应用的EC2实例"
     }},
     {{
-      "name": "用户认证",
+      "name": "用户认证服务",
       "service_type": "Cognito",
       "description": "管理用户身份验证和授权"
     }}
@@ -113,7 +130,7 @@ SQS, SNS, EventBridge, CloudWatch, CloudTrail, CloudFormation
   "diagram_description": {{
     "nodes": [
       {{"id": "web", "type": "EC2", "name": "Web服务器"}},
-      {{"id": "auth", "type": "Cognito", "name": "用户认证"}}
+      {{"id": "auth", "type": "Cognito", "name": "用户认证服务"}}
     ],
     "connections": [
       {{"from": "web", "to": "auth", "label": "认证请求"}}
@@ -122,7 +139,7 @@ SQS, SNS, EventBridge, CloudWatch, CloudTrail, CloudFormation
 }}
 
 注意：确保所有service_type和type字段都使用上述列出的AWS服务类型，不要使用"Service"或其他通用类型。
-""".format(requirements)
+重要：在components和diagram_description中的name字段不能包含方括号[]、圆括号()等特殊字符，以确保生成的图表正确显示。""".format(requirements)
         
         return prompt
     
@@ -147,6 +164,8 @@ SQS, SNS, EventBridge, CloudWatch, CloudTrail, CloudFormation
 4. 设计决策：3-5条关键设计决策，特别是与原架构的差异
 5. 最佳实践：3-5条应用的AWS最佳实践
 
+重要：在components和diagram_description中的name字段不能包含方括号[]、圆括号()等特殊字符，以确保生成的图表正确显示。
+
 对于架构组件，必须使用以下AWS服务类型之一作为service_type字段的值：
 EC2, Lambda, ECS, Fargate, EKS, ElasticBeanstalk, RDS, DynamoDB, ElastiCache, Aurora, Redshift, 
 VPC, ELB, ALB, NLB, CloudFront, Route53, APIGateway, S3, EFS, EBS, IAM, Cognito, WAF, Shield, 
@@ -172,7 +191,7 @@ SQS, SNS, EventBridge, CloudWatch, CloudTrail, CloudFormation
       "description": "运行Web应用的EC2实例"
     }},
     {{
-      "name": "用户认证",
+      "name": "用户认证服务",
       "service_type": "Cognito",
       "description": "管理用户身份验证和授权"
     }}
@@ -180,7 +199,7 @@ SQS, SNS, EventBridge, CloudWatch, CloudTrail, CloudFormation
   "diagram_description": {{
     "nodes": [
       {{"id": "web", "type": "EC2", "name": "Web服务器"}},
-      {{"id": "auth", "type": "Cognito", "name": "用户认证"}}
+      {{"id": "auth", "type": "Cognito", "name": "用户认证服务"}}
     ],
     "connections": [
       {{"from": "web", "to": "auth", "label": "认证请求"}}
@@ -189,7 +208,7 @@ SQS, SNS, EventBridge, CloudWatch, CloudTrail, CloudFormation
 }}
 
 注意：确保所有service_type和type字段都使用上述列出的AWS服务类型，不要使用"Service"或其他通用类型。
-""".format(requirements)
+重要：在components和diagram_description中的name字段不能包含方括号[]、圆括号()等特殊字符，以确保生成的图表正确显示。""".format(requirements)
         
         return prompt
     
@@ -204,6 +223,97 @@ SQS, SNS, EventBridge, CloudWatch, CloudTrail, CloudFormation
         Returns:
             Dict: API响应
         """
+        # 使用dashscope库调用API
+        if self.dashscope:
+            return self._call_api_with_dashscope(prompt, stream_callback)
+        else:
+            return self._call_api_with_requests(prompt, stream_callback)
+    
+    def _call_api_with_dashscope(self, prompt: str, stream_callback=None) -> Dict[str, Any]:
+        """
+        使用dashscope库调用千问API
+        
+        Args:
+            prompt: 提示词
+            stream_callback: 流式响应回调函数
+            
+        Returns:
+            Dict: API响应
+        """
+        from dashscope import Generation
+        
+        try:
+            logger.info(f"使用dashscope库调用千问API (模型: {self._model}, 流式模式: {stream_callback is not None})")
+            
+            # 设置参数
+            parameters = {
+                "temperature": 0.7,
+                "top_p": 0.8,
+                "result_format": "json",
+                "max_tokens": 2000
+            }
+            
+            if stream_callback:
+                # 流式响应处理
+                full_text = ""
+                
+                def handle_stream_response(response):
+                    nonlocal full_text
+                    if response.status_code == 200:
+                        if response.output and response.output.text:
+                            # 计算增量文本
+                            new_text = response.output.text[len(full_text):]
+                            full_text = response.output.text
+                            
+                            # 调用回调函数处理增量文本
+                            if stream_callback and new_text:
+                                stream_callback(new_text)
+                    return True  # 继续接收流式响应
+                
+                # 发送流式请求
+                response = Generation.call(
+                    model=self._model,
+                    prompt=prompt,
+                    stream=True,
+                    stream_callback=handle_stream_response,
+                    **parameters
+                )
+                
+                # 处理完整响应
+                logger.info("流式响应接收完成")
+                return self._parse_response({"output": {"text": full_text}})
+            else:
+                # 普通响应处理
+                response = Generation.call(
+                    model=self._model,
+                    prompt=prompt,
+                    **parameters
+                )
+                
+                if response.status_code == 200:
+                    logger.info("收到千问API响应")
+                    return self._parse_response({"output": {"text": response.output.text}})
+                else:
+                    logger.error(f"API请求失败: {response.code}, {response.message}")
+                    return {"error": f"API请求失败: {response.message}"}
+                
+        except Exception as e:
+            logger.error(f"API调用异常: {str(e)}")
+            return {"error": str(e)}
+    
+    def _call_api_with_requests(self, prompt: str, stream_callback=None) -> Dict[str, Any]:
+        """
+        使用requests库调用千问API
+        
+        Args:
+            prompt: 提示词
+            stream_callback: 流式响应回调函数
+            
+        Returns:
+            Dict: API响应
+        """
+        import requests
+        
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json"
@@ -213,7 +323,7 @@ SQS, SNS, EventBridge, CloudWatch, CloudTrail, CloudFormation
         stream_mode = stream_callback is not None
         
         data = {
-            "model": self.model,  # 使用配置的模型
+            "model": self._model,  # 使用配置的模型
             "input": {
                 "prompt": prompt
             },
@@ -227,7 +337,7 @@ SQS, SNS, EventBridge, CloudWatch, CloudTrail, CloudFormation
         }
         
         try:
-            logger.info(f"发送请求到千问API (模型: {self.model}, 流式模式: {stream_mode})")
+            logger.info(f"使用requests库调用千问API (模型: {self._model}, 流式模式: {stream_mode})")
             
             # 添加重试机制
             max_retries = 2
@@ -272,6 +382,8 @@ SQS, SNS, EventBridge, CloudWatch, CloudTrail, CloudFormation
         Returns:
             Dict: 完整的API响应
         """
+        import requests
+        
         full_text = ""
         
         try:

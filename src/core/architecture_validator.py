@@ -8,7 +8,7 @@
 
 from typing import Dict, Any, List, Tuple, Optional
 
-from src.api.qianwen_api import QianwenAPI
+from src.api.base_api import BaseAPIClient
 from src.core.ai_rule_validator import AIRuleValidator
 from src.utils.logger import get_logger
 
@@ -18,18 +18,47 @@ logger = get_logger(__name__)
 class ArchitectureValidator:
     """架构验证器"""
     
-    def __init__(self, api_client: QianwenAPI = None, max_iterations: int = 3):
+    def __init__(self, api_client=None, max_iterations: int = 3):
         """
         初始化架构验证器
         
         Args:
-            api_client: 千问API客户端，如果为None则创建新实例
+            api_client: API客户端，如果为None则创建新实例
             max_iterations: 最大迭代次数
         """
-        self.api_client = api_client or QianwenAPI()
+        # 使用APIFactory创建API客户端，确保使用当前选择的模型
+        from src.api.api_factory import APIFactory
+        self.api_client = api_client or APIFactory.create_api_client()
         self.rule_validator = AIRuleValidator(api_client=self.api_client)
         self.max_iterations = max_iterations
-        logger.info(f"架构验证器初始化完成，最大迭代次数: {self.max_iterations}")
+        logger.info(f"架构验证器初始化完成，使用模型: {self.api_client.model_name}，最大迭代次数: {self.max_iterations}")
+    
+    def validate(self, architecture: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        验证架构设计
+        
+        Args:
+            architecture: 架构设计
+            
+        Returns:
+            Dict[str, Any]: 验证结果，包含valid和message字段
+        """
+        # 检查规则验证器是否有规则
+        if not self.rule_validator.rules:
+            logger.warning("AI规则验证器没有加载任何规则，跳过验证过程")
+            return {"valid": True, "message": "没有加载任何规则，跳过验证"}
+            
+        # 验证架构
+        is_valid, violations = self.rule_validator.validate_architecture(architecture, "")
+        
+        if is_valid:
+            return {"valid": True, "message": "架构验证通过"}
+        else:
+            violation_messages = [f"{v['rule']}: {v['reason']}" for v in violations]
+            return {
+                "valid": False, 
+                "message": "架构验证失败:\n" + "\n".join(violation_messages)
+            }
     
     def validate_and_improve(self, architecture: Dict[str, Any], requirements: str, 
                             callback=None) -> Tuple[Dict[str, Any], List[Dict[str, Any]], int]:

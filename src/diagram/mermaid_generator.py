@@ -33,7 +33,7 @@ class MermaidGenerator:
         # 如果没有diagram_description，返回空图
         if not diagram_desc or not diagram_desc.get("nodes"):
             logger.warning("未找到架构图描述，生成空图")
-            return "graph TD\n  A[架构图] --> B[无数据]"
+            return "graph TD\n  A[\"架构图\"] --> B[\"无数据\"]"
         
         nodes_data = diagram_desc.get("nodes", [])
         connections_data = diagram_desc.get("connections", [])
@@ -49,22 +49,29 @@ class MermaidGenerator:
             node_name = node.get("name", "")
             node_type = node.get("type", "")
             
+            # 确保节点名称和类型是字符串
+            node_name = str(node_name) if node_name else ""
+            node_type = str(node_type) if node_type else ""
+            
+            # 创建节点标签
+            node_label = f"{node_name}<br/>{node_type}" if node_type else node_name
+            
             # 根据节点类型设置不同的形状
             if "Database" in node_type or "Aurora" in node_type or "RDS" in node_type or "DynamoDB" in node_type:
-                # 数据库使用圆柱形
-                mermaid_code.append(f"  {node_id}[({node_name}<br/>{node_type})]")
+                # 数据库使用圆柱形 - 正确的语法是 nodeId[("label")]
+                mermaid_code.append(f"  {node_id}[({node_label})]")
             elif "Lambda" in node_type or "Function" in node_type:
-                # Lambda函数使用六边形
-                mermaid_code.append(f"  {node_id}[/{node_name}<br/>{node_type}/]")
+                # Lambda函数使用六边形 - 正确的语法是 nodeId[/"label"/]
+                mermaid_code.append(f"  {node_id}[{node_label}]")
             elif "S3" in node_type or "Storage" in node_type:
-                # 存储使用圆角矩形
-                mermaid_code.append(f"  {node_id}[({node_name}<br/>{node_type})]")
+                # 存储使用圆角矩形 - 正确的语法是 nodeId["label"]
+                mermaid_code.append(f"  {node_id}[{node_label}]")
             elif "API" in node_type or "Gateway" in node_type:
-                # API使用菱形
-                mermaid_code.append(f"  {node_id}{{{node_name}<br/>{node_type}}}")
+                # API使用菱形 - 正确的语法是 nodeId{"label"}
+                 mermaid_code.append("  %s{%s}" % (node_id, node_label))
             else:
-                # 默认使用矩形
-                mermaid_code.append(f"  {node_id}[{node_name}<br/>{node_type}]")
+                # 默认使用矩形 - 正确的语法是 nodeId["label"]
+                mermaid_code.append(f"  {node_id}[{node_label}]")
         
         # 添加连接
         for conn in connections_data:
@@ -78,6 +85,8 @@ class MermaidGenerator:
         
         # 添加样式
         mermaid_code.append("  classDef aws fill:#FF9900,stroke:#232F3E,color:#232F3E;")
-        mermaid_code.append("  class " + ",".join([node.get("id", "") for node in nodes_data]) + " aws;")
+        node_ids = [node.get("id", "") for node in nodes_data if node.get("id")]
+        if node_ids:
+            mermaid_code.append("  class " + ",".join(node_ids) + " aws;")
         
         return "\n".join(mermaid_code)

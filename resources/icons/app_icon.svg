@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- 背景 -->
+  <rect width="512" height="512" rx="60" fill="#2E5C8A"/>
+  
+  <!-- 建筑图纸网格 -->
+  <path d="M60 60H452V452H60V60Z" fill="#F0F4F8" stroke="#2E5C8A" stroke-width="4"/>
+  <path d="M60 140H452" stroke="#A0C0E0" stroke-width="2"/>
+  <path d="M60 220H452" stroke="#A0C0E0" stroke-width="2"/>
+  <path d="M60 300H452" stroke="#A0C0E0" stroke-width="2"/>
+  <path d="M60 380H452" stroke="#A0C0E0" stroke-width="2"/>
+  <path d="M140 60V452" stroke="#A0C0E0" stroke-width="2"/>
+  <path d="M220 60V452" stroke="#A0C0E0" stroke-width="2"/>
+  <path d="M300 60V452" stroke="#A0C0E0" stroke-width="2"/>
+  <path d="M380 60V452" stroke="#A0C0E0" stroke-width="2"/>
+  
+  <!-- 架构图形 -->
+  <rect x="160" y="160" width="192" height="80" rx="8" fill="#4A89DC" stroke="#2E5C8A" stroke-width="4"/>
+  <rect x="120" y="280" width="120" height="80" rx="8" fill="#5D9CEC" stroke="#2E5C8A" stroke-width="4"/>
+  <rect x="272" y="280" width="120" height="80" rx="8" fill="#5D9CEC" stroke="#2E5C8A" stroke-width="4"/>
+  
+  <!-- 连接线 -->
+  <path d="M256 240V280" stroke="#2E5C8A" stroke-width="4"/>
+  <path d="M180 280V260H332V280" stroke="#2E5C8A" stroke-width="4"/>
+  
+  <!-- 圆点 -->
+  <circle cx="256" cy="240" r="6" fill="#ED5565"/>
+  <circle cx="180" cy="280" r="6" fill="#ED5565"/>
+  <circle cx="332" cy="280" r="6" fill="#ED5565"/>
+  
+  <!-- 文字 -->
+  <text x="256" y="205" font-family="Arial" font-size="24" font-weight="bold" text-anchor="middle" fill="white">架构设计</text>
+  <text x="180" y="325" font-family="Arial" font-size="20" font-weight="bold" text-anchor="middle" fill="white">服务A</text>
+  <text x="332" y="325" font-family="Arial" font-size="20" font-weight="bold" text-anchor="middle" fill="white">服务B</text>
+</svg>
